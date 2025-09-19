@@ -1,4 +1,4 @@
-(() => {
+async function run() {
 	if (window.lastFrame != null) {
 		cancelAnimationFrame(window.lastFrame);
 	}
@@ -14,7 +14,7 @@
 		PLAYING: 1,
 		PAUSED: 2,
 		STOPPED: 3
-	}
+	};
 	const MILLISECOND = 1,
 		SECOND = 1000 * MILLISECOND,
 		MINUTE = 60 * SECOND,
@@ -22,8 +22,10 @@
 
 	// globals
 	window.lastFrame = null;
-	window.gameState = GAME_STATES.STOPPED;
+	window.gameCurrentState = GAME_STATES.STOPPED;
+	window.gameData = null;
 
+	// style="animation: spin 2s linear infinite;"
 	// classes
 	class Actor {
 		x = 0;
@@ -48,28 +50,28 @@
 
 	class ImageActor extends Actor {
 		img = new Image();
-		
+
 		constructor() {
 			super();
-			
+
 			this.visible = false;
-			
+
 			this.img.onload = () => {
 				this.visible = true;
 			}
 		}
-		
+
 		act(delta) {
 			super.act(delta);
-			
+
 			let dx = delta * 30;
 			this.x += dx;
 			this.y += dx;
 		}
-		
+
 		draw() {
 			super.draw();
-			
+
 			const radius = this.img.width / 2;
 			this.stage.ctx.save();
 			this.stage.ctx.beginPath();
@@ -122,7 +124,7 @@
 
 		const canvas = document.createElement("canvas");
 		rightPanel.appendChild(canvas);
-		
+
 		canvas.id = "game-canvas";
 		canvas.style.position = "fixed";
 		canvas.style.width = "100%";
@@ -137,6 +139,7 @@
 		while (bottomSidebarSection.children.length > 2) { // cleanup
 			bottomSidebarSection.removeChild(bottomSidebarSection.children[0]);
 		}
+
 		const gameControlButton = settingsButton.cloneNode(true);
 		bottomSidebarSection.prepend(gameControlButton);
 		gameControlButton.id = "wac-control-button";
@@ -188,7 +191,7 @@
 	}
 
 	function play() {
-		window.gameState = GAME_STATES.PLAYING;
+		window.gameCurrentState = GAME_STATES.PLAYING;
 		console.info("PLAYING");
 		controlButton.firstChild.onclick = stop;
 		changeControlButtonIcon(SVG_ICONS.stop);
@@ -197,7 +200,7 @@
 	};
 
 	function stop() {
-		window.gameState = GAME_STATES.STOPPED;
+		window.gameCurrentState = GAME_STATES.STOPPED;
 		console.info("STOPPING");
 		controlButton.firstChild.onclick = play;
 		changeControlButtonIcon(SVG_ICONS.play);
@@ -208,7 +211,9 @@
 		}
 		cancelAnimationFrame(window.lastFrame);
 	}
-})();
+};
+
+await run();
 
 function setupData() {
 	return new Promise((resolve, reject) => {
@@ -224,10 +229,112 @@ function setupData() {
 			const chats = await getStoreData(transaction, "chat");
 			const profilePicThumbs = await getStoreData(transaction, "profile-pic-thumb");
 			// const messages = await getStoreData(transaction, "message");
-			resolve({ chats, profilePicThumbs });
+			const contacts = await getStoreData(transaction, "contact");
+			const participants = await getStoreData(transaction, "participant");
+			resolve({
+				chats,
+				profilePicThumbs,
+				contacts,
+				participants
+			});
 		}
 	})
 };
+
+(async () => {
+	const stored = await setupData();
+
+	const pp = new Map();
+	for (const ppThumb of stored.profilePicThumbs) {
+		pp.set(ppThumb.id, {
+			preview: ppThumb.previewEurl,
+			full: ppThumb.eurl
+		});
+	}
+
+	const participantsData = stored.participants.reduce((p, c) => {
+		if (c.groupId in p) {
+			throw new Error("it already exists?? wow!");
+		}
+		p[c.groupId] = c;
+		return p;
+	}, {});
+	const contactsData = stored.contacts.reduce((p, c) => {
+		if (c.phoneNumber == null) {
+			return p;
+		}
+		if (c.phoneNumber in p) {
+			const old = p[c.phoneNumber];
+			if (c.pushname == null && c.name == null && old.shortName == null) {
+				p[c.phoneNumber] = c;
+			}
+			return p;
+		}
+		p[c.phoneNumber] = c;
+		return p;
+	}, {});
+
+	const chats = new Map();
+
+	for (const chat of stored.chats) {
+		if (chat.id === "0@c.us") continue;
+
+		const profilePic = pp.get(chat.id);
+		const [id, idType] = chat.id.split("@");
+		const type = idType === "c.us" ?
+			"private" :
+			idType === "g.us" ?
+			"group" :
+			idType === "newsletter" ?
+			"channel" :
+			idType === "broadcast" ?
+			"broadcast" :
+			null;
+
+		if (type == null) {
+			console.error("unknown chat type", chat);
+			continue;
+		}
+
+		const chatObject = {
+			id: chat.id,
+			type: type,
+			name: chat.name,
+			isSpam: !chat.notSpam,
+			isLocked: chat.isLocked,
+			pp: profilePic,
+			unreadCount: chat.unreadCount,
+			unreadMentionCount: chat.unreadMentionCount,
+			isArchived: chat.archive,
+			isMuted: chat.muteExpiration !== 0,
+		};
+
+		if (type === "private") {
+			const contact = contactsData[chat.id];
+			chatObject.contact = {
+				phoneNumber: Number(id),
+				name: contact.name,
+				shortName: contact.shortName,
+				pushname: contact.pushname
+			};
+		} else if (type === "group") {
+			const participants = participantsData[chat.id];
+			if (participants == null) {
+				throw new Error("should not be null!")
+			}
+			chatObject.participants = {
+				admins: participants.admins,
+				superAdmins: participants.superAdmins,
+				participants: participants.participants,
+				pastParticipants: participants.pastParticipants,
+			};
+		}
+
+		chats.set(chat.id, chatObject);
+	}
+
+	// 	console.log(stored.participants)
+})();
 
 function getStoreData(transaction, storeName) {
 	return new Promise((resolve, reject) => {
