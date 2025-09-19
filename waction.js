@@ -69,7 +69,14 @@
 		
 		draw() {
 			super.draw();
+			
+			const radius = this.img.width / 2;
+			this.stage.ctx.save();
+			this.stage.ctx.beginPath();
+			this.stage.ctx.arc(this.x + radius, this.y + radius, radius, 0, Math.PI * 2);
+			this.stage.ctx.clip();
 			this.stage.ctx.drawImage(this.img, this.x, this.y);
+			this.stage.ctx.restore();
 		}
 	}
 
@@ -114,12 +121,15 @@
 		}
 
 		const canvas = document.createElement("canvas");
+		rightPanel.appendChild(canvas);
+		
 		canvas.id = "game-canvas";
 		canvas.style.position = "fixed";
 		canvas.style.width = "100%";
 		canvas.style.height = "100%";
 		canvas.style.backgroundColor = CANVAS_BACKGROUND_COLOR;
-		rightPanel.appendChild(canvas);
+		canvas.width = canvas.clientWidth;
+		canvas.height = canvas.clientHeight;
 
 		const sidebar = leftPanel.parentElement.previousSibling.previousSibling;
 		const settingsButton = sidebar.querySelector("[aria-label='Settings']").parentElement;
