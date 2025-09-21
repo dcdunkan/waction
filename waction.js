@@ -8,6 +8,8 @@ async function run() {
 	}
 
 	// constants
+	const GAME_STYLESHEET = `@keyframes spin{to{transform:rotate(360deg)}}`;
+	
 	const SVG_ICONS = {
 		play: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-play-icon lucide-play"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>`,
 		pause: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pause-icon lucide-pause"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></svg>`,
@@ -19,7 +21,7 @@ async function run() {
 		"PLAYING",
 		"LOADING_DATA",
 		"PAUSED",
-		"STOPPED"
+		"STOPPED",
 	].reduce((p, state, i) => {
 		p[state] = i;
 		return p;
@@ -55,7 +57,6 @@ async function run() {
 		});
 		return result;
 	}
-
 
 	// classes
 	class BaseActor {
@@ -119,7 +120,7 @@ async function run() {
 
 			this.img.onload = () => {
 				this.visible = true;
-			}
+			};
 
 			this.setChat(chat);
 		}
@@ -134,7 +135,11 @@ async function run() {
 				this.img.src = chat.pp.preview;
 			}
 
-			this.chatName = chat.name || (chat.contact != null ? (chat.contact.name || chat.contact.shortName || chat.contact.pushname || chat.contact.phoneNumber) : "Unknown");
+			this.chatName = chat.name ||
+				(chat.contact != null ?
+					(chat.contact.name || chat.contact.shortName || chat.contact.pushname ||
+						chat.contact.phoneNumber) :
+					"Unknown");
 		}
 
 		act(delta) {
@@ -221,6 +226,15 @@ async function run() {
 	}
 
 	function setupControlButtons() {
+		const GAME_STYLESHEET_ID = "wac-stylesheet";
+		let gameStylesheet = document.getElementById(GAME_STYLESHEET_ID);
+		if (gameStylesheet == null) {
+			gameStylesheet = document.createElement("style");
+			gameStylesheet.id = GAME_STYLESHEET_ID;
+			document.head.append(gameStylesheet);
+		}
+		gameStylesheet.textContent = GAME_STYLESHEET;
+		
 		const leftPanel = document.getElementById("side");
 
 		const sidebar = leftPanel.parentElement.previousSibling.previousSibling;
@@ -315,7 +329,7 @@ async function run() {
 			currentMouseY = null;
 			e.stopPropagation();
 			e.preventDefault();
-		}
+		};
 		document.addEventListener("mouseup", mouseup, true);
 		const keydown = (e) => {
 			const key = resolveKey(e.key);
@@ -331,7 +345,7 @@ async function run() {
 			delete currentKeyTime[key];
 			e.stopPropagation();
 			e.preventDefault();
-		}
+		};
 		document.addEventListener("keyup", keyup, true);
 
 		return function restoreInput() {
@@ -346,7 +360,7 @@ async function run() {
 		let lastTimestamp = null;
 		let frames = 0;
 		let secondProgress = 0;
-		
+
 		const canvas = document.getElementById("game-canvas");
 		canvas.focus();
 		window.restoreListeners = blockInputOutside(canvas);
@@ -355,7 +369,10 @@ async function run() {
 		const chatsWithProfile = Array.from(CHATS.values())
 			.filter((chat) => {
 				if (chat.pp == null || chat.pp.preview == null) return false;
-				return chat.name != null || (chat.contact != null && (chat.contact.name != null || chat.contact.shortName != null || chat.contact.pushname != null));
+				return chat.name != null ||
+					(chat.contact != null &&
+						(chat.contact.name != null || chat.contact.shortName != null ||
+							chat.contact.pushname != null));
 			});
 
 		const MAX_ENEMIES_IN_A_WAVE = 5;
@@ -436,12 +453,13 @@ async function run() {
 			spawnEnemy() {
 				if (this.enemyChats.length === 0) return;
 
-				const randomChat = this.enemyChats[Math.floor(Math.random() * this.enemyChats.length)];
+				const randomChat =
+					this.enemyChats[Math.floor(Math.random() * this.enemyChats.length)];
 				const enemy = new Enemy(randomChat);
 				stage.addActor(enemy);
 				enemy.setPosition(
 					randomInt(0, stage.width - enemy.width),
-					randomInt(0, stage.height - enemy.height)
+					randomInt(0, stage.height - enemy.height),
 				);
 				this.currentActiveEnemies++;
 				this.spawnCooldown = randomFloat(MIN_SPAWN_COOLDOWN, MAX_SPAWN_COOLDOWN);
@@ -560,7 +578,10 @@ async function run() {
 					}
 				}
 
-				if (this.x < 0 || this.x > this.stage.width || this.y < 0 || this.y > this.stage.height) {
+				if (
+					this.x < 0 || this.x > this.stage.width || this.y < 0 ||
+					this.y > this.stage.height
+				) {
 					this.stage.removeActor(this);
 				}
 			}
@@ -609,13 +630,14 @@ async function run() {
 		console.info("LOADING_DATA");
 		setCanvasVisible(true);
 		changeControlButtonIcon(SVG_ICONS.loaderCircle);
-		// todo: controlButton.style.animation = "spin 2s linear infinite";
+		const loaderIcon = controlButton.querySelector("svg.lucide");
+		loaderIcon.style.animation = "spin 1s linear infinite";
 		controlButton.firstChild.onclick = null;
 
 		findRequiredWhatsappData()
 			.then(({
 				chats,
-				me
+				me,
 			}) => {
 				CHATS = chats;
 				ME = me;
@@ -636,10 +658,10 @@ async function run() {
 				changeControlButtonIcon(SVG_ICONS.play);
 
 				console.error(error);
-				alert("Failed to load data. Please check console.")
+				alert("Failed to load data. Please check console.");
 			})
 			.finally(() => {
-				controlButton.style.animation = "";
+				loaderIcon.style.animation = "";
 			});
 	}
 
@@ -665,18 +687,19 @@ async function run() {
 		}
 		cancelAnimationFrame(window.lastFrame);
 	}
-};
+}
 
 await run();
 
 async function findRequiredWhatsappData() {
-	const stored = await getIndexedDbData();
+	await new Promise((res) => setTimeout(res, 10000))
+	const stored = await getIndexedDbData("model-storage");
 
 	const pp = new Map();
 	for (const ppThumb of stored.profilePicThumbs) {
 		pp.set(ppThumb.id, {
 			preview: ppThumb.previewEurl,
-			full: ppThumb.eurl
+			full: ppThumb.eurl,
 		});
 	}
 
@@ -745,12 +768,12 @@ async function findRequiredWhatsappData() {
 				phoneNumber: Number(id),
 				name: contact.name,
 				shortName: contact.shortName,
-				pushname: contact.pushname
+				pushname: contact.pushname,
 			};
 		} else if (type === "group") {
 			const participants = participantsData[chat.id];
 			if (participants == null) {
-				throw new Error("should not be null!")
+				throw new Error("should not be null!");
 			}
 			chatObject.participants = {
 				admins: participants.admins,
@@ -769,67 +792,92 @@ async function findRequiredWhatsappData() {
 	}
 	return {
 		chats,
-		me
+		me,
 	};
 }
 
-function getIndexedDbData() {
+// for (const {
+// 		name: dbName
+// 	} of await indexedDB.databases()) {
+// 	if (dbName === "model-storage") continue;
+// 	const db = await readIndexedDb(dbName);
+// 	if (db.objectStoreNames.length === 0) continue;
+// 	const transaction = db.transaction(db.objectStoreNames, "readonly");
+// 	for (const name of db.objectStoreNames) {
+// 		if (["message", "sync-actions", "reactions", "chat", "message-info", "participant", "poll-votes", "message-orphans", "message-association", "group-metadata", "orphan-revoke", "group-invite-v4"].includes(name)) continue;
+// 		const data = await getStoreData(transaction, name);
+// 		for (const dd of data) {
+// 			if (JSON.stringify(dd).includes("72103944556734:47@lid" /* "72103944556734" */)) {
+// 				console.log(name);
+// 				console.log(dd);
+// 			}
+// 		}
+// 	}
+// }
+
+function readIndexedDb(dbName) {
+	return resolveRequest(indexedDB.open(dbName));
+}
+
+async function findAuthWALid() {
+	const WA_LID_VALUE_FORMAT = /\d+:\d+@lid/;
+	const db = await readIndexedDb("wawc");
+	const transaction = db.transaction("user", "readonly");
+	const userStore = transaction.objectStore("user");
+	const {
+		value,
+	} = await resolveRequest(userStore.get("WALid"));
+	const parsedStr = JSON.parse(value);
+	if (!WA_LID_VALUE_FORMAT.test(parsedStr)) {
+		throw new Error("Unhandled WALid format: " + parsedStr);
+	}
+	return parsedStr;
+}
+
+async function getIndexedDbData(dbName) {
+	const db = await readIndexedDb(dbName);
+	const transaction = db.transaction(db.objectStoreNames, "readonly");
+	const chats = await getStoreData(transaction, "chat");
+	const profilePicThumbs = await getStoreData(transaction, "profile-pic-thumb");
+	// const messages = await getStoreData(transaction, "message");
+	const contacts = await getStoreData(transaction, "contact");
+	const participants = await getStoreData(transaction, "participant");
+	// 				const deviceList = await getStoreData(transaction, "device-list");
+
+	const authWALid = await findAuthWALid();
+	const meJid = authWALid.replace(/:\d+/, "");
+
+	// 	const orphanTcToken = await getStoreData(transaction, "orphan-tc-token");
+	// 	if (orphanTcToken.length !== 1) {
+	// 		throw new Error("Failed to get the authorised user information");
+	// 	}
+
+	// 	const meJid = orphanTcToken[0].chatId;
+	const meContact = contacts.find((contact) => contact.id === meJid);
+	if (meContact == null) {
+		throw new Error("What!");
+	}
+	const mePhoneNumber = meContact.phoneNumber;
+
+	return {
+		chats,
+		profilePicThumbs,
+		contacts,
+		participants,
+		me: {
+			jid: meJid,
+			phoneNumber: mePhoneNumber,
+		},
+	};
+}
+
+function resolveRequest(request) {
 	return new Promise((resolve, reject) => {
-		const dbOpenRequest = indexedDB.open("model-storage");
-		dbOpenRequest.onerror = (event) => {
-			console.log(event)
-			console.error("Something went wrong")
-			reject();
-		};
-		dbOpenRequest.onsuccess = async () => {
-			const db = dbOpenRequest.result;
-			const transaction = db.transaction(db.objectStoreNames, "readonly");
-			const chats = await getStoreData(transaction, "chat");
-			const profilePicThumbs = await getStoreData(transaction, "profile-pic-thumb");
-			// const messages = await getStoreData(transaction, "message");
-			const contacts = await getStoreData(transaction, "contact");
-			const participants = await getStoreData(transaction, "participant");
-			// 			const deviceList = await getStoreData(transaction, "device-list");
-			const orphanTcToken = await getStoreData(transaction, "orphan-tc-token");
-			if (orphanTcToken.length !== 1) {
-				throw new Error("Failed to get the authorised user information");
-			}
-			const meJid = orphanTcToken[0].chatId;
-			const meContact = contacts.find((contact) => contact.id === meJid);
-			if (meContact == null) {
-				throw new Error("What!");
-			}
-			const mePhoneNumber = meContact.phoneNumber;
-
-			// 			for (const name of db.objectStoreNames) {
-			// 				if (["message", "sync-actions", "reactions", "chat", "message-info", "participant", "poll-votes", "message-orphans", "message-association", "group-metadata", "orphan-revoke", "group-invite-v4"].includes(name)) continue;
-			// 				const data = await getStoreData(transaction, name);
-			// 				for (const dd of data) {
-			// 					if (JSON.stringify(dd).includes("72103944556734")) {
-			// 						console.log(name);
-			// 						console.log(dd);
-			// 					}
-			// 				}
-			// 			}
-
-			resolve({
-				chats,
-				profilePicThumbs,
-				contacts,
-				participants,
-				me: {
-					jid: meJid,
-					phoneNumber: mePhoneNumber,
-				}
-			});
-		};
-	})
+		request.onerror = (event) => reject(event);
+		request.onsuccess = () => resolve(request.result);
+	});
 }
 
 function getStoreData(transaction, storeName) {
-	return new Promise((resolve, reject) => {
-		const request = transaction.objectStore(storeName).getAll();
-		request.onerror = () => reject();
-		request.onsuccess = () => resolve(request.result);
-	})
+	return resolveRequest(transaction.objectStore(storeName).getAll());
 }
