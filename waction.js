@@ -692,7 +692,7 @@ async function run() {
 await run();
 
 async function findRequiredWhatsappData() {
-	await new Promise((res) => setTimeout(res, 10000))
+// 	await new Promise((res) => setTimeout(res, 10000));
 	const stored = await getIndexedDbData("model-storage");
 
 	const pp = new Map();
