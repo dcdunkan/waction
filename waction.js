@@ -9,9 +9,8 @@ async function run() {
 		window.restoreListeners();
 	}
 
-	// constants
+	// engine constants
 	const GAME_STYLESHEET = `@keyframes spin{to{transform:rotate(360deg)}}`;
-
 	const SVG_ICONS = {
 		play: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-play-icon lucide-play"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>`,
 		pause: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pause-icon lucide-pause"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></svg>`,
@@ -54,14 +53,25 @@ async function run() {
 	function randomInt(min, max) {
 		return Math.floor(randomFloat(min, max));
 	}
+	
+	// game constants
+	const GRAVITY = 1250;
+	const BULLET_COOLDOWN_TIME = 0.1;	
+	const MAX_ENEMIES_IN_A_WAVE = 1;
+	const MIN_SPAWN_COOLDOWN = 1;
+	const MAX_SPAWN_COOLDOWN = 5;
+	const CHARACTER_SIZE = 64;
 
 	// globals
 	window.gameCurrentState = GAME_STATES.STOPPED;
-
+	window.lastFrame = null;
+	window.restoreListeners = null;
+	
 	let CHATS = null;
 	let ME = null;
 	let gameData = null;
-
+	
+	// inputs management
 	function activateInputs(modes) {
 		if (modes.length === 0) {
 			throw new Error("unintended? specify at least one");
@@ -234,18 +244,57 @@ async function run() {
 	}
 
 	const input = activateInputs(["mouse", "keyboard", "gamepad"]);
-
-	// 	input.gamepad.activate();
-	// 	let k = setInterval(() => {
-	// 		console.log(input.gamepad.pads[0].axes[GAMEPAD_MAPPING.standard.axes.rs_x]);
-	// 	}, 100);
-	// 	setTimeout(() => {
-	// 		clearInterval(k);
-	// 		input.gamepad.deactivate();
-	// 	}, 5000);
-
-	const CHARACTER_SIZE = 64;
-
+	window.restoreListeners = input.deactivate;
+	
+	// viewports
+	class FitViewport {
+		worldWidth;
+		worldHeight;
+		
+		scale;
+		canvasX;
+		canvasY;
+		canvasWidth;
+		canvasHeight;
+		
+		constructor(worldWidth, worldHeight) {
+			this.worldWidth = worldWidth;
+			this.worldHeight = worldHeight;
+			this.scale = 1;
+			this.canvasX = 0;
+			this.canvasY = 0;
+			this.canvasWidth = 0;
+			this.canvasHeight = 0;
+		}
+		
+		update(canvasWidth, canvasHeight) {
+			const limitingFactor = Math.min(
+				canvasWidth / this.worldWidth,
+				canvasHeight / this.worldHeight
+			);
+			this.scale = limitingFactor;
+			
+			this.canvasWidth = this.worldWidth * limitingFactor;
+			this.canvasHeight = this.worldHeight * limitingFactor;
+			
+			this.canvasX = (canvasWidth - this.canvasWidth) / 2;
+			this.canvasY = (canvasHeight - this.canvasHeight) / 2;
+		}
+		
+		project(worldX, worldY) {
+			return {
+				x: this.canvasX + worldX * this.scale,
+				y: this.canvasY + worldY * this.scale
+			};
+		}
+		unproject(x, y) {
+			return {
+				worldX: (x - this.canvasX) / this.scale,
+				worldY: (y - this.canvasY) / this.scale
+			};
+		}
+	}
+	
 	// classes
 	class BaseActor {
 		id = "";
@@ -358,22 +407,23 @@ async function run() {
 	}
 
 	class Stage {
-		canvas;
+		viewport;
 		ctx;
+		
 		#actors;
 
-		constructor(canvas) {
-			this.canvas = canvas;
-			this.ctx = canvas.getContext("2d");
+		constructor(viewport, canvasCtx) {
+			this.viewport = viewport;
+			this.ctx = canvasCtx;
 			this.#actors = [];
 		}
 
 		get width() {
-			return this.canvas.width;
+			return this.viewport.worldWidth;
 		}
 
 		get height() {
-			return this.canvas.height;
+			return this.viewport.worldHeight;
 		}
 
 		addActor(actor) {
@@ -403,8 +453,6 @@ async function run() {
 		}
 
 		draw() {
-			this.ctx.resetTransform();
-			this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 			for (const actor of this.#actors) {
 				if (actor.visible === true) {
 					actor.draw();
@@ -413,73 +461,65 @@ async function run() {
 		}
 	}
 	
-	const GRAVITY = 200;
-	const BULLET_COOLDOWN_TIME = 0.05;
-
 	class Hero extends ChatActor {
 		me;
-		vx = 300;
+		vx = 500;
 		vy = 0;
+		
+		jumpVelocity = -500;
 
 		onGround = false;
-		groundY = 831;
+		groundY = 400;
 
 		bulletCooldown = 0;
 
 		constructor() {
 			super(ME);
 		}
+		
+		shoot(destX, destY) {
+			const centerX = this.x + this.width / 2,
+				  centerY = this.y + this.height / 2;
+			const bullet = new TextBullet();
+			bullet.setPosition(centerX, centerY);
+			bullet.setSpawn(centerX, centerY);
+			bullet.setDestination(destX, destY);
+			this.stage.addActor(bullet);
+		}
 
 		act(delta) {
 			const gp = Object.values(input.gamepad.pads).find((pad) => pad != null);
 
-			// shoot				
-			this.bulletCooldown -= delta;
-
-			if (this.bulletCooldown <= 0) {
-				this.bulletCooldown = BULLET_COOLDOWN_TIME;
-
-				const centerX = this.x + this.width / 2,
-					centerY = this.y + this.height / 2;
-
-				if (input.mouse.left) {
-					const bullet = new TextBullet();
-					bullet.setPosition(centerX, centerY);
-					bullet.setSpawn(centerX, centerY);
-					bullet.setDestination(input.mouse.x, input.mouse.y);
-					this.stage.addActor(bullet);
-				}
-				if (gp?.buttons?. [GAMEPAD_MAPPING.standard.buttons.rt]?.pressed) {
-					const bullet = new TextBullet();
-					bullet.setPosition(centerX, centerY);
-					bullet.setSpawn(centerX, centerY);
-					bullet.setDestination(
-						centerX + gp.axes[GAMEPAD_MAPPING.standard.axes.rs_x],
-						centerY + gp.axes[GAMEPAD_MAPPING.standard.axes.rs_y]
-					);
-					this.stage.addActor(bullet);
-				}
-			}
-
-			// left-right movement
-			if (gp?.axes?. [GAMEPAD_MAPPING.standard.axes.ls_x] != null) {
-				this.x += delta * this.vx * Math.round(gp.axes[GAMEPAD_MAPPING.standard.axes.ls_x]);
-			}
+			// left-right movement			
+			let dir = 0;
 			if (input.keyboard.keys.ArrowRight) {
-				this.x += delta * this.vx;
+				dir = 1;
 			}
 			if (input.keyboard.keys.ArrowLeft) {
-				this.x -= delta * this.vx;
+				dir = -1;
 			}
-
-			// jump
+			if (gp?.axes?.[GAMEPAD_MAPPING.standard.axes.ls_x] != null) {
+				// rounding to count for small errrors
+				dir = Math.sign(Math.round(gp.axes[GAMEPAD_MAPPING.standard.axes.ls_x]));
+			}
+			this.x += delta * this.vx * dir;
+			
+			// limit the movementsx
+			if (this.x <= 0 && dir < 0) {
+				this.x = 0;
+			}
+			if (this.x + CHARACTER_SIZE >= this.stage.width && dir > 0) {
+				this.x = this.stage.width - CHARACTER_SIZE;
+			}
+			
+			// gravity & jump
 			if (this.onGround) {
 				if (gp?.buttons?. [GAMEPAD_MAPPING.standard.buttons.a]?.pressed) {
-					this.vy = -200;
+					this.vy = this.jumpVelocity;
 					this.onGround = false;
 				}
 				if (input.keyboard.keys.Space) {
-					this.vy = -200;
+					this.vy = this.jumpVelocity;
 					this.onGround = false;
 				}
 			}
@@ -492,12 +532,28 @@ async function run() {
 				this.vy = 0;
 				this.onGround = true;
 			}
+			
+			// shoot				
+			this.bulletCooldown -= delta;
+
+			if (this.bulletCooldown <= 0) {
+				this.bulletCooldown = BULLET_COOLDOWN_TIME;
+				
+				if (input.mouse.left) {
+					const dest = this.stage.viewport.unproject(input.mouse.x, input.mouse.y);
+					this.shoot(dest.worldX, dest.worldY);
+				}
+				if (gp?.buttons?.[GAMEPAD_MAPPING.standard.buttons.rt]?.pressed) {
+					const centerX = this.x + this.width / 2,
+						  centerY = this.y + this.height / 2;
+					this.shoot(
+						centerX + gp.axes[GAMEPAD_MAPPING.standard.axes.rs_x],
+						centerY + gp.axes[GAMEPAD_MAPPING.standard.axes.rs_y]
+					);
+				}
+			}
 		}
 	}
-
-	const MAX_ENEMIES_IN_A_WAVE = 5;
-	const MIN_SPAWN_COOLDOWN = 1;
-	const MAX_SPAWN_COOLDOWN = 5;
 
 	class EnemySystem extends Actor {
 		enemyChats = [];
@@ -516,10 +572,10 @@ async function run() {
 			const randomChat =
 				this.enemyChats[Math.floor(Math.random() * this.enemyChats.length)];
 			const enemy = new Enemy(randomChat, this);
-			stage.addActor(enemy);
+			this.stage.addActor(enemy);
 			enemy.setPosition(
-				randomInt(0, stage.width - enemy.width),
-				randomInt(0, stage.height - enemy.height),
+				randomInt(0, this.stage.width - enemy.width),
+				randomInt(0, this.stage.height - enemy.height),
 			);
 			this.currentActiveEnemies++;
 			this.spawnCooldown = randomFloat(MIN_SPAWN_COOLDOWN, MAX_SPAWN_COOLDOWN);
@@ -728,17 +784,25 @@ async function run() {
 	function changeControlButtonIcon(svgIcon) {
 		controlButton.firstChild.querySelector("span").innerHTML = svgIcon;
 	}
-
+	
 	function initialize() {
 		let lastTimestamp = null;
 		let frames = 0;
 		let secondProgress = 0;
 
 		const canvas = document.getElementById("game-canvas");
+		const ctx = canvas.getContext("2d"); // basically the (sprite)batch similar to libgdx
+		const viewport = new FitViewport(800, 600);
+		
 		canvas.focus();
+		canvas.width = canvas.clientWidth;
+		canvas.height = canvas.clientHeight;
+		viewport.update(canvas.clientWidth, canvas.clientHeight);
+
+		const stage = new Stage(viewport, ctx);
+		
 		input.activate();
 		window.restoreListeners = input.deactivate;
-		const stage = new Stage(canvas);
 
 		const chatsWithProfile = Array.from(CHATS.values())
 			.filter((chat) => {
@@ -770,11 +834,27 @@ async function run() {
 				console.log("FPS:", frames);
 				frames = 0;
 			}
-
+			
 			// update stuff
 			input.update(delta); // (mainly for polling the gamepads if events are not supported)
 			stage.act(delta);
-			stage.draw();
+			canvas.width = canvas.clientWidth;
+			canvas.height = canvas.clientHeight;
+			viewport.update(canvas.clientWidth, canvas.clientHeight);
+			
+			// drawing
+			ctx.resetTransform();
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.save();
+			ctx.translate(viewport.canvasX, viewport.canvasY);
+			ctx.scale(viewport.scale, viewport.scale);
+
+			ctx.strokeStyle = "blue";
+			ctx.strokeRect(0, 0, viewport.worldWidth, viewport.worldHeight);
+
+			stage.draw(); // finally draw
+			
+			ctx.restore();
 
 			window.lastFrame = requestAnimationFrame(loop);
 		}
@@ -807,7 +887,7 @@ async function run() {
 				initialize();
 			})
 			.catch((error) => {
-				if (window.restoreListeners) {
+				if (typeof window.restoreListeners === "function") {
 					window.restoreListeners();
 				}
 				window.gameCurrentState = GAME_STATES.PLAY;
@@ -823,7 +903,7 @@ async function run() {
 	}
 
 	function stop() {
-		if (window.restoreListeners) {
+		if (typeof window.restoreListeners === "function") {
 			window.restoreListeners();
 		}
 		setCanvasVisible(false);
@@ -831,6 +911,7 @@ async function run() {
 		console.info("STOPPING");
 		controlButton.firstChild.onclick = play;
 		changeControlButtonIcon(SVG_ICONS.play);
+		
 		const canvas = document.getElementById("game-canvas");
 		const ctx = canvas.getContext("2d");
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -843,9 +924,11 @@ async function run() {
 			return;
 		}
 		cancelAnimationFrame(window.lastFrame);
+		window.lastFrame = null;
 	}
 }
 
+console.clear();
 await run();
 
 async function findRequiredWhatsappData() {
