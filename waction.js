@@ -29,6 +29,7 @@ async function run() {
 			axes: indexObj(["ls_x", "ls_y", "ua_x", "ua_y", "rs_x", "rs_y", "ub_x", "ub_y"]),
 		}
 	}
+	const INPUT_MODES = ["mouse", "keyboard", "gamepad"];
 
 	// helpers
 	function randomStr(length) {
@@ -171,13 +172,26 @@ async function run() {
 					console.error("your browser does not have support for gamepads");
 					continue;
 				}
+				
 				input.gamepad = {
 					pads: {},
 				};
-
-				for (const gamepad of navigator.getGamepads()) {
-					if (gamepad.connected) {
-						input.gamepad.pads[gamepad.index] = gamepad;
+				
+				let gamepadPermissionAllowed = false;
+				
+				try {
+					for (const gamepad of navigator.getGamepads()) {
+						if (gamepad.connected) {
+							input.gamepad.pads[gamepad.index] = gamepad;
+						}
+					}
+					gamepadPermissionAllowed = true;
+				} catch (error) {
+					gamepadPermissionAllowed = false;
+					if (error instanceof DOMException && error.name === "SecurityError") {
+						console.warn("This window context does not allow gamepads in the permission policy");
+					} else {
+						console.warn("Something went wrong while getting gamepads (disabling)")
 					}
 				}
 
@@ -206,6 +220,7 @@ async function run() {
 					window.removeEventListener("gamepaddisconnected", gamepaddisconnected, true);
 				};
 				input.gamepad.update = (delta) => {
+					if (!gamepadPermissionAllowed) return;
 					for (const gamepad of navigator.getGamepads()) {
 						if (!gamepad.connected) {
 							console.warn("expected the gamepad to be connected");
@@ -488,7 +503,7 @@ async function run() {
 		}
 
 		act(delta) {
-			const gp = Object.values(input.gamepad.pads).find((pad) => pad != null);
+			const gp = input.gamepad && Object.values(input.gamepad.pads).find((pad) => pad != null);
 
 			// left-right movement			
 			let dir = 0;
@@ -1003,6 +1018,7 @@ async function findRequiredWhatsappData() {
 
 		if (type === "private") {
 			const contact = contactsData[chat.id];
+			// todo: check why this fails
 			chatObject.contact = {
 				id: contact.id,
 				phoneNumber: Number(id),
