@@ -58,7 +58,7 @@ async function run() {
 	// game constants
 	const GRAVITY = 1250;
 	const BULLET_COOLDOWN_TIME = 0.1;	
-	const MAX_ENEMIES_IN_A_WAVE = 1;
+	const MAX_ENEMIES_IN_A_WAVE = 3;
 	const MIN_SPAWN_COOLDOWN = 1;
 	const MAX_SPAWN_COOLDOWN = 5;
 	const CHARACTER_SIZE = 64;
@@ -136,22 +136,19 @@ async function run() {
 					},
 				};
 
-				function resolveKey(key) {
-					if (key === " ") {
-						return "Space";
-					}
-					return key;
+				function resolveKey(code) {
+					return code;
 				}
 
 				const keydown = (e) => {
-					const key = resolveKey(e.key);
+					const key = resolveKey(e.code);
 					input.keyboard.keys[key] = true;
 					input.keyboard.times[key] = Date.now();
 					e.stopPropagation();
 					e.preventDefault();
 				};
 				const keyup = (e) => {
-					const key = resolveKey(e.key);
+					const key = resolveKey(e.code);
 					delete input.keyboard.keys[key];
 					delete input.keyboard.times[key];
 					e.stopPropagation();
@@ -325,7 +322,7 @@ async function run() {
 		}
 
 		act(delta) {}
-		draw() {}
+		draw(ctx) {}
 	}
 
 	class Actor extends BaseActor {
@@ -353,11 +350,44 @@ async function run() {
 			super.act(delta);
 		}
 
-		draw() {
-			super.draw();
+		draw(ctx) {
+			super.draw(ctx);
 		}
 	}
+	
+	class TextActor extends Actor {
+		text = "";
 
+		constructor(text) {
+			super();
+			
+			this.text = text;
+		}
+
+		setText(text) {
+			this.text = text;
+			
+			const ctx = this.stage.ctx;
+			ctx.font = "16px 'Arial'";
+			const metrics = ctx.measureText(this.text);
+			this.width = metrics.width;
+			this.height = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+		}
+
+		draw(ctx) {
+			super.draw(ctx);
+			
+			if (this.text.trim().length == 0) {
+				return;
+			}
+
+			ctx.font = "12px monospace";
+			ctx.textAlign = "left";
+			ctx.fillStyle = "green";
+			ctx.fillText(this.text, 0, this.height);
+		}
+	}
+	
 	class ChatActor extends Actor {
 		img = new Image();
 		chat = null;
@@ -398,14 +428,12 @@ async function run() {
 			super.act(delta);
 		}
 
-		draw() {
-			super.draw();
+		draw(ctx) {
+			super.draw(ctx);
 
 			if (this.chat == null) return;
 
 			const radius = this.width / 2;
-
-			const ctx = this.stage.ctx;
 
 			ctx.save();
 			ctx.beginPath();
@@ -470,7 +498,7 @@ async function run() {
 		draw() {
 			for (const actor of this.#actors) {
 				if (actor.visible === true) {
-					actor.draw();
+					actor.draw(this.ctx);
 				}
 			}
 		}
@@ -503,22 +531,23 @@ async function run() {
 		}
 
 		act(delta) {
-			const gp = input.gamepad && Object.values(input.gamepad.pads).find((pad) => pad != null);
+			super.act(delta);
+			
+			const gp = input.gamepad &&
+				  Object.values(input.gamepad.pads).find((pad) => pad != null);
 
-			// left-right movement			
+			// left-right movement
 			let dir = 0;
-			if (input.keyboard.keys.ArrowRight) {
+			if (input.keyboard.keys.ArrowRight || input.keyboard.keys.KeyD) {
 				dir = 1;
-			}
-			if (input.keyboard.keys.ArrowLeft) {
+			} else if (input.keyboard.keys.ArrowLeft || input.keyboard.keys.KeyA) {
 				dir = -1;
-			}
-			if (gp?.axes?.[GAMEPAD_MAPPING.standard.axes.ls_x] != null) {
+			} else if (gp?.axes?.[GAMEPAD_MAPPING.standard.axes.ls_x] != null) {
 				// rounding to count for small errrors
 				dir = Math.sign(Math.round(gp.axes[GAMEPAD_MAPPING.standard.axes.ls_x]));
 			}
 			this.x += delta * this.vx * dir;
-			
+
 			// limit the movementsx
 			if (this.x <= 0 && dir < 0) {
 				this.x = 0;
@@ -721,10 +750,8 @@ async function run() {
 			}
 		}
 
-		draw() {
-			super.draw();
-
-			const ctx = this.stage.ctx;
+		draw(ctx) {
+			super.draw(ctx);
 
 			ctx.font = "16px 'Arial'";
 			ctx.textAlign = "center";
@@ -743,10 +770,7 @@ async function run() {
 		}
 		gameStylesheet.textContent = GAME_STYLESHEET;
 
-		const leftPanel = document.getElementById("side");
-
-		const sidebar = leftPanel.parentElement.previousSibling.previousSibling;
-		const settingsButton = sidebar.querySelector("[aria-label='Settings']").parentElement;
+		const settingsButton = document.querySelector('button[aria-label="Settings"][data-navbar-item="true"]').parentElement;
 		const bottomSidebarSection = settingsButton.parentElement;
 		while (bottomSidebarSection.children.length > 2) { // cleanup
 			bottomSidebarSection.removeChild(bottomSidebarSection.children[0]);
@@ -806,14 +830,13 @@ async function run() {
 		let secondProgress = 0;
 
 		const canvas = document.getElementById("game-canvas");
-		const ctx = canvas.getContext("2d"); // basically the (sprite)batch similar to libgdx
 		const viewport = new FitViewport(800, 600);
-		
 		canvas.focus();
 		canvas.width = canvas.clientWidth;
 		canvas.height = canvas.clientHeight;
 		viewport.update(canvas.clientWidth, canvas.clientHeight);
 
+		const ctx = canvas.getContext("2d"); // basically the (sprite)batch similar to libgdx
 		const stage = new Stage(viewport, ctx);
 		
 		input.activate();
@@ -834,6 +857,9 @@ async function run() {
 		const hero = new Hero();
 		hero.setPosition(100, stage.height - 300);
 		stage.addActor(hero);
+		
+		const fpsCounter = new TextActor("FPS: 0");
+		stage.addActor(fpsCounter);
 
 		function loop(frameTimestamp) {
 			// fps & delta
@@ -846,7 +872,7 @@ async function run() {
 			secondProgress += delta;
 			if (secondProgress >= 1) {
 				secondProgress = 0;
-				console.log("FPS:", frames);
+				fpsCounter.setText("FPS: " + frames);
 				frames = 0;
 			}
 			
@@ -1018,7 +1044,11 @@ async function findRequiredWhatsappData() {
 
 		if (type === "private") {
 			const contact = contactsData[chat.id];
-			// todo: check why this fails
+			if (contact == null) {
+				// fails because of chats like "Meta AI", hopefully nothing else will escape through this
+				continue;
+			}
+
 			chatObject.contact = {
 				id: contact.id,
 				phoneNumber: Number(id),
