@@ -43,18 +43,22 @@ async function run() {
 		});
 		return result;
 	}
+
 	function indexObj(arr) {
 		return arr.reduce((p, name, i) => ({
 			...p,
 			[name]: i
 		}), {});
 	}
+
 	function randomFloat(min, max) {
 		return Math.random() * (max - min + 1) + min;
 	}
+
 	function randomInt(min, max) {
 		return Math.floor(randomFloat(min, max));
 	}
+
 	function getLeastUsedDebugBoundColor() {
 		const shifted = DEBUG_BOUNDS_COLORS.shift();
 		DEBUG_BOUNDS_COLORS.push(shifted);
@@ -68,16 +72,16 @@ async function run() {
 		}
 		return array;
 	}
-	
+
 	// game constants
 	const GRAVITY = 1250;
-	const BULLET_COOLDOWN_TIME = 0.1;	
+	const BULLET_COOLDOWN_TIME = 0.1;
 	const MAX_ENEMIES_IN_A_WAVE = 3;
 	const MIN_SPAWN_COOLDOWN = 1;
 	const MAX_SPAWN_COOLDOWN = 5;
 	const CHARACTER_SIZE = 64;
 	const DEBUG_BOUND_COLOR_CLASS_MAP = {};
-	
+
 	// game helpers
 	function getDebugBoundColorForClass(obj) {
 		if (obj == null || obj.constructor == null || typeof obj.constructor.name !== "string") {
@@ -93,11 +97,11 @@ async function run() {
 	window.gameCurrentState = GAME_STATES.STOPPED;
 	window.lastFrame = null;
 	window.restoreListeners = null;
-	
+
 	let CHATS = null;
 	let ME = null;
 	let gameData = null;
-	
+
 	// inputs management
 	function activateInputs(modes) {
 		if (modes.length === 0) {
@@ -138,19 +142,30 @@ async function run() {
 				const mouseup = (e) => {
 					const button = resolveMouseClick(e);
 					input.mouse[button] = false;
-					input.mouse.x = null;
-					input.mouse.y = null;
 					e.stopPropagation();
 					e.preventDefault();
 				};
+				const mousemove = (e) => {
+					const canvas = document.getElementById("game-canvas");
+					if (canvas == null) {
+						console.error("game canvas does not exist")
+						return;
+					}
+					const leftWidth = document.body.clientWidth - canvas.width;
+					const leftHeight = document.body.clientHeight - canvas.height;
+					input.mouse.x = e.clientX - leftWidth;
+					input.mouse.y = e.clientY - leftHeight;
+				}
 
 				input.mouse.activate = () => {
 					window.addEventListener("mousedown", mousedown, true);
 					window.addEventListener("mouseup", mouseup, true);
+					window.addEventListener("mousemove", mousemove, true);
 				};
 				input.mouse.deactivate = () => {
 					window.removeEventListener("mousedown", mousedown, true);
 					window.removeEventListener("mouseup", mouseup, true);
+					window.addEventListener("mousemove", mousemove, true);
 				};
 				input.mouse.update = (delta) => {};
 			} else if (mode === "keyboard") {
@@ -195,13 +210,13 @@ async function run() {
 					console.error("your browser does not have support for gamepads");
 					continue;
 				}
-				
+
 				input.gamepad = {
 					pads: {},
 				};
-				
+
 				let gamepadPermissionAllowed = false;
-				
+
 				try {
 					for (const gamepad of navigator.getGamepads()) {
 						if (gamepad.connected) {
@@ -283,18 +298,18 @@ async function run() {
 
 	const input = activateInputs(["mouse", "keyboard", "gamepad"]);
 	window.restoreListeners = input.deactivate;
-	
+
 	// viewports
 	class FitViewport {
 		worldWidth;
 		worldHeight;
-		
+
 		scale;
 		canvasX;
 		canvasY;
 		canvasWidth;
 		canvasHeight;
-		
+
 		constructor(worldWidth, worldHeight) {
 			this.worldWidth = worldWidth;
 			this.worldHeight = worldHeight;
@@ -304,21 +319,21 @@ async function run() {
 			this.canvasWidth = 0;
 			this.canvasHeight = 0;
 		}
-		
+
 		update(canvasWidth, canvasHeight) {
 			const limitingFactor = Math.min(
 				canvasWidth / this.worldWidth,
 				canvasHeight / this.worldHeight
 			);
 			this.scale = limitingFactor;
-			
+
 			this.canvasWidth = this.worldWidth * limitingFactor;
 			this.canvasHeight = this.worldHeight * limitingFactor;
-			
+
 			this.canvasX = (canvasWidth - this.canvasWidth) / 2;
 			this.canvasY = (canvasHeight - this.canvasHeight) / 2;
 		}
-		
+
 		project(worldX, worldY) {
 			return {
 				x: this.canvasX + worldX * this.scale,
@@ -332,7 +347,7 @@ async function run() {
 			};
 		}
 	}
-	
+
 	// classes
 	class BaseActor {
 		id = "";
@@ -389,31 +404,31 @@ async function run() {
 
 		draw(ctx) {
 			super.draw(ctx);
-			
+
 			if (this.debug) {
 				ctx.strokeStyle = this.debugColor;
 				ctx.strokeRect(this.x, this.y, this.width, this.height);
 			}
 		}
 	}
-	
+
 	class TextActor extends Actor {
 		text = "";
 		font = "12px monospace";
 
 		constructor(text) {
 			super();
-			
+
 			this.text = text;
 		}
 
 		setText(text) {
 			this.text = text;
 		}
-		
+
 		act(delta) {
 			super.act(delta);
-			
+
 			const ctx = this.stage.ctx;
 			ctx.font = this.font;
 			const metrics = ctx.measureText(this.text);
@@ -423,7 +438,7 @@ async function run() {
 
 		draw(ctx) {
 			super.draw(ctx);
-			
+
 			if (this.text.trim().length == 0) {
 				return;
 			}
@@ -435,7 +450,7 @@ async function run() {
 			ctx.fillText(this.text, 0, 0);
 		}
 	}
-	
+
 	class ChatActor extends Actor {
 		img = new Image();
 		chat = null;
@@ -476,7 +491,7 @@ async function run() {
 			super.act(delta);
 		}
 
-		draw(ctx) {			
+		draw(ctx) {
 			super.draw(ctx);
 
 			if (this.chat == null) return;
@@ -500,7 +515,7 @@ async function run() {
 	class Stage {
 		viewport;
 		ctx;
-		
+
 		#actors;
 
 		constructor(viewport, canvasCtx) {
@@ -551,12 +566,12 @@ async function run() {
 			}
 		}
 	}
-	
+
 	class Hero extends ChatActor {
 		me;
 		vx = 500;
 		vy = 0;
-		
+
 		jumpVelocity = -500;
 
 		onGround = false;
@@ -567,10 +582,10 @@ async function run() {
 		constructor() {
 			super(ME);
 		}
-		
+
 		shoot(destX, destY) {
 			const centerX = this.x + this.width / 2,
-				  centerY = this.y + this.height / 2;
+				centerY = this.y + this.height / 2;
 			const bullet = new TextBullet();
 			bullet.setPosition(centerX, centerY);
 			bullet.setSpawn(centerX, centerY);
@@ -580,9 +595,9 @@ async function run() {
 
 		act(delta) {
 			super.act(delta);
-			
+
 			const gp = input.gamepad &&
-				  Object.values(input.gamepad.pads).find((pad) => pad != null);
+				Object.values(input.gamepad.pads).find((pad) => pad != null);
 
 			// left-right movement
 			let dir = 0;
@@ -590,7 +605,7 @@ async function run() {
 				dir = 1;
 			} else if (input.keyboard.keys.ArrowLeft || input.keyboard.keys.KeyA) {
 				dir = -1;
-			} else if (gp?.axes?.[GAMEPAD_MAPPING.standard.axes.ls_x] != null) {
+			} else if (gp?.axes?. [GAMEPAD_MAPPING.standard.axes.ls_x] != null) {
 				// rounding to count for small errrors
 				dir = Math.sign(Math.round(gp.axes[GAMEPAD_MAPPING.standard.axes.ls_x]));
 			}
@@ -603,7 +618,7 @@ async function run() {
 			if (this.x + CHARACTER_SIZE >= this.stage.width && dir > 0) {
 				this.x = this.stage.width - CHARACTER_SIZE;
 			}
-			
+
 			// gravity & jump
 			if (this.onGround) {
 				if (gp?.buttons?. [GAMEPAD_MAPPING.standard.buttons.a]?.pressed) {
@@ -624,20 +639,20 @@ async function run() {
 				this.vy = 0;
 				this.onGround = true;
 			}
-			
+
 			// shoot				
 			this.bulletCooldown -= delta;
 
 			if (this.bulletCooldown <= 0) {
 				this.bulletCooldown = BULLET_COOLDOWN_TIME;
-				
+
 				if (input.mouse.left) {
 					const dest = this.stage.viewport.unproject(input.mouse.x, input.mouse.y);
 					this.shoot(dest.worldX, dest.worldY);
 				}
-				if (gp?.buttons?.[GAMEPAD_MAPPING.standard.buttons.rt]?.pressed) {
+				if (gp?.buttons?. [GAMEPAD_MAPPING.standard.buttons.rt]?.pressed) {
 					const centerX = this.x + this.width / 2,
-						  centerY = this.y + this.height / 2;
+						centerY = this.y + this.height / 2;
 					this.shoot(
 						centerX + gp.axes[GAMEPAD_MAPPING.standard.axes.rs_x],
 						centerY + gp.axes[GAMEPAD_MAPPING.standard.axes.rs_y]
@@ -871,7 +886,7 @@ async function run() {
 	function changeControlButtonIcon(svgIcon) {
 		controlButton.firstChild.querySelector("span").innerHTML = svgIcon;
 	}
-	
+
 	function initialize() {
 		let lastTimestamp = null;
 		let frames = 0;
@@ -886,7 +901,7 @@ async function run() {
 
 		const ctx = canvas.getContext("2d"); // basically the (sprite)batch similar to libgdx
 		const stage = new Stage(viewport, ctx);
-		
+
 		input.activate();
 		window.restoreListeners = input.deactivate;
 
@@ -894,8 +909,8 @@ async function run() {
 			.filter((chat) => {
 				if (chat.pp == null || chat.pp.preview == null) return false;
 				return (chat.contact != null &&
-						(chat.contact.name != null || chat.contact.shortName != null ||
-							chat.contact.pushname != null));
+					(chat.contact.name != null || chat.contact.shortName != null ||
+						chat.contact.pushname != null));
 			});
 
 		const enemySystem = new EnemySystem(shuffleArray(chatsWithProfile));
@@ -905,10 +920,9 @@ async function run() {
 		hero.setPosition(100, stage.height - 300);
 		hero.setDebug(true);
 		stage.addActor(hero);
-		
+
 		const fpsCounter = new TextActor("FPS:");
 		stage.addActor(fpsCounter);
-		fpsCounter.setDebug(true);
 
 		function loop(frameTimestamp) {
 			// fps & delta
@@ -924,14 +938,14 @@ async function run() {
 				fpsCounter.setText("FPS: " + frames);
 				frames = 0;
 			}
-			
+
 			// update stuff
 			input.update(delta); // (mainly for polling the gamepads if events are not supported)
 			stage.act(delta);
 			canvas.width = canvas.clientWidth;
 			canvas.height = canvas.clientHeight;
 			viewport.update(canvas.clientWidth, canvas.clientHeight);
-			
+
 			// drawing
 			ctx.resetTransform();
 			ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -943,7 +957,7 @@ async function run() {
 			ctx.strokeRect(0, 0, viewport.worldWidth, viewport.worldHeight);
 
 			stage.draw(); // finally draw
-			
+
 			ctx.restore();
 
 			window.lastFrame = requestAnimationFrame(loop);
@@ -1001,7 +1015,7 @@ async function run() {
 		console.info("STOPPING");
 		controlButton.firstChild.onclick = play;
 		changeControlButtonIcon(SVG_ICONS.play);
-		
+
 		const canvas = document.getElementById("game-canvas");
 		const ctx = canvas.getContext("2d");
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
