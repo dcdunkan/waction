@@ -30,8 +30,9 @@ async function run() {
 		}
 	}
 	const INPUT_MODES = ["mouse", "keyboard", "gamepad"];
+	const DEBUG_BOUNDS_COLORS = ["crimson", "aquamarine", "darkorange", "firebrick", "greenyellow", "lightsalmon", "steelblue"];
 
-	// helpers
+	// engine helpers
 	function randomStr(length) {
 		const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 		let result = "";
@@ -54,6 +55,11 @@ async function run() {
 	function randomInt(min, max) {
 		return Math.floor(randomFloat(min, max));
 	}
+	function getLeastUsedDebugBoundColor() {
+		const shifted = DEBUG_BOUNDS_COLORS.shift();
+		DEBUG_BOUNDS_COLORS.push(shifted);
+		return shifted;
+	}
 	
 	// game constants
 	const GRAVITY = 1250;
@@ -62,6 +68,18 @@ async function run() {
 	const MIN_SPAWN_COOLDOWN = 1;
 	const MAX_SPAWN_COOLDOWN = 5;
 	const CHARACTER_SIZE = 64;
+	const DEBUG_BOUND_COLOR_CLASS_MAP = {};
+	
+	// game helpers
+	function getDebugBoundColorForClass(obj) {
+		if (obj == null || obj.constructor == null || typeof obj.constructor.name !== "string") {
+			throw new Error("invalid request for color, non-class");
+		}
+		if (typeof DEBUG_BOUND_COLOR_CLASS_MAP[obj.constructor.name] !== "string") {
+			DEBUG_BOUND_COLOR_CLASS_MAP[obj.constructor.name] = getLeastUsedDebugBoundColor();
+		}
+		return DEBUG_BOUND_COLOR_CLASS_MAP[obj.constructor.name];
+	}
 
 	// globals
 	window.gameCurrentState = GAME_STATES.STOPPED;
@@ -331,19 +349,30 @@ async function run() {
 		width = 0;
 		height = 0;
 		visible = true;
+		debug = false;
+		debugColor = "red";
 
 		constructor() {
 			super();
 			this.x = 0;
 			this.y = 0;
-			this.visible = true;
 			this.width = 0;
 			this.height = 0;
+			this.visible = true;
+			this.debug = false;
+			this.debugColor = getDebugBoundColorForClass(this);
 		}
 
 		setPosition(x, y) {
 			this.x = x;
 			this.y = y;
+		}
+
+		setDebug(debug) {
+			this.debug = debug;
+		}
+		setDebugColor(debugColor) {
+			this.debugColor = debugColor;
 		}
 
 		act(delta) {
@@ -352,11 +381,17 @@ async function run() {
 
 		draw(ctx) {
 			super.draw(ctx);
+			
+			if (this.debug) {
+				ctx.strokeStyle = this.debugColor;
+				ctx.strokeRect(this.x, this.y, this.width, this.height);
+			}
 		}
 	}
 	
 	class TextActor extends Actor {
 		text = "";
+		font = "12px monospace";
 
 		constructor(text) {
 			super();
@@ -366,9 +401,13 @@ async function run() {
 
 		setText(text) {
 			this.text = text;
+		}
+		
+		act(delta) {
+			super.act(delta);
 			
 			const ctx = this.stage.ctx;
-			ctx.font = "16px 'Arial'";
+			ctx.font = this.font;
 			const metrics = ctx.measureText(this.text);
 			this.width = metrics.width;
 			this.height = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
@@ -381,10 +420,11 @@ async function run() {
 				return;
 			}
 
-			ctx.font = "12px monospace";
+			ctx.font = this.font;
 			ctx.textAlign = "left";
+			ctx.textBaseline = "top";
 			ctx.fillStyle = "green";
-			ctx.fillText(this.text, 0, this.height);
+			ctx.fillText(this.text, 0, 0);
 		}
 	}
 	
@@ -428,7 +468,7 @@ async function run() {
 			super.act(delta);
 		}
 
-		draw(ctx) {
+		draw(ctx) {			
 			super.draw(ctx);
 
 			if (this.chat == null) return;
@@ -649,6 +689,7 @@ async function run() {
 		constructor(chat, enemySystem) {
 			super(chat);
 			this.enemySystem = enemySystem;
+			this.debug = true;
 		}
 
 		die() {
@@ -856,10 +897,12 @@ async function run() {
 
 		const hero = new Hero();
 		hero.setPosition(100, stage.height - 300);
+		hero.setDebug(true);
 		stage.addActor(hero);
 		
-		const fpsCounter = new TextActor("FPS: 0");
+		const fpsCounter = new TextActor("FPS:");
 		stage.addActor(fpsCounter);
+		fpsCounter.setDebug(true);
 
 		function loop(frameTimestamp) {
 			// fps & delta
