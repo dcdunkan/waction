@@ -60,6 +60,14 @@ async function run() {
 		DEBUG_BOUNDS_COLORS.push(shifted);
 		return shifted;
 	}
+	// https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle#JavaScript_implementation
+	function shuffleArray(array) {
+		for (let i = array.length - 1; i >= 1; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[array[i], array[j]] = [array[j], array[i]];
+		}
+		return array;
+	}
 	
 	// game constants
 	const GRAVITY = 1250;
@@ -653,9 +661,8 @@ async function run() {
 		spawnEnemy() {
 			if (this.enemyChats.length === 0) return;
 
-			const randomChat =
-				this.enemyChats[Math.floor(Math.random() * this.enemyChats.length)];
-			const enemy = new Enemy(randomChat, this);
+			const chat = this.enemyChats.pop(); // array is shuffled before passing on to the constructor
+			const enemy = new Enemy(chat, this);
 			this.stage.addActor(enemy);
 			enemy.setPosition(
 				randomInt(0, this.stage.width - enemy.width),
@@ -886,13 +893,12 @@ async function run() {
 		const chatsWithProfile = Array.from(CHATS.values())
 			.filter((chat) => {
 				if (chat.pp == null || chat.pp.preview == null) return false;
-				return chat.name != null ||
-					(chat.contact != null &&
+				return (chat.contact != null &&
 						(chat.contact.name != null || chat.contact.shortName != null ||
 							chat.contact.pushname != null));
 			});
 
-		const enemySystem = new EnemySystem(chatsWithProfile);
+		const enemySystem = new EnemySystem(shuffleArray(chatsWithProfile));
 		stage.addActor(enemySystem);
 
 		const hero = new Hero();
