@@ -1,6 +1,33 @@
 async function run() {
+	// run an mutation observer to check playablity on the current state of the app.
+	// like, you can only play when you are in the chat list page.
+	let runnableState = false;
+	// disconnect the observer on every re-run (improper exit)
+	if (window.runnableStateObserver != null &&
+		window.runnableStateObserver instanceof MutationObserver &&
+		typeof window.runnableStateObserver.disconnect === "function"
+	) {
+		window.runnableStateObserver.disconnect();
+	}
+	window.runnableStateObserver = new MutationObserver((list, observer) => {
+		runnableState = document.querySelector(makeSelector("button", {
+			"aria-label": "Chats",
+			"aria-pressed": true,
+			"data-navbar-item": true,
+			"data-navbar-item-selected": true,
+			"data-navbar-item-index": 0
+		})) != null && document.querySelector(makeSelector("div", {
+			"aria-label": "Chat list"
+		})) != null;
+		console.log("runnable:", runnableState);
+	});
+	window.runnableStateObserver.observe(document.getElementById("app"), {
+		childList: true,
+		subtree: true
+	});
+
 	// reset in case of improper exit (useful while debugging)
-	if (window.lastFrame != null) {
+	if (typeof window.lastFrame === "number") {
 		cancelAnimationFrame(window.lastFrame);
 		window.lastFrame = null;
 	}
@@ -28,7 +55,7 @@ async function run() {
 			buttons: indexObj(["a", "b", "x", "y", "lb", "rb", "lt", "rt", "select", "start", "ls", "rs", "dpad_up", "dpad_down", "dpad_left", "dpad_right", "center"]),
 			axes: indexObj(["ls_x", "ls_y", "ua_x", "ua_y", "rs_x", "rs_y", "ub_x", "ub_y"]),
 		}
-	}
+	};
 	const INPUT_MODES = ["mouse", "keyboard", "gamepad"];
 	const DEBUG_BOUNDS_COLORS = ["crimson", "aquamarine", "darkorange", "firebrick", "greenyellow", "lightsalmon", "steelblue"];
 
@@ -73,6 +100,10 @@ async function run() {
 		return array;
 	}
 
+	function makeSelector(el, attrs) {
+		return el + Object.entries(attrs).map(([k, v]) => "[" + k + "=" + '"' + v.toString().replaceAll('"', '\\"') + '"]').join("");
+	}
+
 	// game constants
 	const GRAVITY = 1250;
 	const BULLET_COOLDOWN_TIME = 0.1;
@@ -98,8 +129,6 @@ async function run() {
 	window.lastFrame = null;
 	window.restoreListeners = null;
 
-	let CHATS = null;
-	let ME = null;
 	let gameData = null;
 
 	// inputs management
@@ -165,7 +194,7 @@ async function run() {
 				input.mouse.deactivate = () => {
 					window.removeEventListener("mousedown", mousedown, true);
 					window.removeEventListener("mouseup", mouseup, true);
-					window.addEventListener("mousemove", mousemove, true);
+					window.removeEventListener("mousemove", mousemove, true);
 				};
 				input.mouse.update = (delta) => {};
 			} else if (mode === "keyboard") {
@@ -579,8 +608,8 @@ async function run() {
 
 		bulletCooldown = 0;
 
-		constructor() {
-			super(ME);
+		constructor(user) {
+			super(user);
 		}
 
 		shoot(destX, destY) {
@@ -833,12 +862,14 @@ async function run() {
 		}
 		gameStylesheet.textContent = GAME_STYLESHEET;
 
-		const settingsButton = document.querySelector('button[aria-label="Settings"][data-navbar-item="true"]').parentElement;
+		const settingsButton = document.querySelector(makeSelector("button", {
+			"aria-label": "Settings",
+			"data-navbar-item": true
+		})).parentElement;
 		const bottomSidebarSection = settingsButton.parentElement;
-		while (bottomSidebarSection.children.length > 2) { // cleanup
+		while (bottomSidebarSection.children.length > 2) { // cleanup (to just settings & profile)
 			bottomSidebarSection.removeChild(bottomSidebarSection.children[0]);
 		}
-
 		const gameControlButton = settingsButton.cloneNode(true);
 		bottomSidebarSection.prepend(gameControlButton);
 		gameControlButton.id = "wac-control-button";
@@ -849,17 +880,14 @@ async function run() {
 		const rightPanel = leftPanel.parentElement.nextSibling;
 		const bannerDiv = rightPanel.querySelector("div");
 		bannerDiv.id = "wa-banner-div";
-
 		for (const child of rightPanel.children) {
 			if (child.id === bannerDiv.id) {
 				continue;
 			}
 			rightPanel.removeChild(child);
 		}
-
 		const canvas = document.createElement("canvas");
 		rightPanel.appendChild(canvas);
-
 		canvas.style.visibility = "hidden";
 		canvas.id = "game-canvas";
 		canvas.style.position = "fixed";
@@ -869,9 +897,7 @@ async function run() {
 		canvas.width = canvas.clientWidth;
 		canvas.height = canvas.clientHeight;
 	}
-
-	setupControlButtons();
-
+	
 	function setCanvasVisible(visible) {
 		const canvas = document.getElementById("game-canvas");
 		const bannerDiv = document.getElementById("wa-banner-div");
@@ -879,6 +905,7 @@ async function run() {
 		bannerDiv.style.visibility = visible ? "hidden" : "visible";
 	}
 
+	setupControlButtons();
 	const controlButton = document.getElementById("wac-control-button");
 	controlButton.firstChild.onclick = play;
 	changeControlButtonIcon(SVG_ICONS.play);
@@ -887,7 +914,7 @@ async function run() {
 		controlButton.firstChild.querySelector("span").innerHTML = svgIcon;
 	}
 
-	function initialize() {
+	function initialize(chats, me) {
 		let lastTimestamp = null;
 		let frames = 0;
 		let secondProgress = 0;
@@ -905,7 +932,7 @@ async function run() {
 		input.activate();
 		window.restoreListeners = input.deactivate;
 
-		const chatsWithProfile = Array.from(CHATS.values())
+		const chatsWithProfile = Array.from(chats.values())
 			.filter((chat) => {
 				if (chat.pp == null || chat.pp.preview == null) return false;
 				return (chat.contact != null &&
@@ -916,7 +943,7 @@ async function run() {
 		const enemySystem = new EnemySystem(shuffleArray(chatsWithProfile));
 		stage.addActor(enemySystem);
 
-		const hero = new Hero();
+		const hero = new Hero(me);
 		hero.setPosition(100, stage.height - 300);
 		hero.setDebug(true);
 		stage.addActor(hero);
@@ -966,6 +993,7 @@ async function run() {
 	}
 
 	function play() {
+		// document.dispatchEvent(new KeyboardEvent('keydown', { key: "Escape" }));
 		setupGameArea();
 		window.gameCurrentState = GAME_STATES.LOADING_DATA;
 		console.info("LOADING_DATA");
@@ -980,15 +1008,12 @@ async function run() {
 				chats,
 				me,
 			}) => {
-				CHATS = chats;
-				ME = me;
-
 				window.gameCurrentState = GAME_STATES.PLAYING;
 				console.info("PLAYING");
 				controlButton.firstChild.onclick = stop;
 				changeControlButtonIcon(SVG_ICONS.stop);
 
-				initialize();
+				initialize(chats, me);
 			})
 			.catch((error) => {
 				if (typeof window.restoreListeners === "function") {
@@ -1020,9 +1045,6 @@ async function run() {
 		const ctx = canvas.getContext("2d");
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-		CHATS = null;
-		ME = null;
-
 		if (window.lastFrame == null) {
 			console.error("No game to stop??!");
 			return;
@@ -1041,6 +1063,9 @@ async function findRequiredWhatsappData() {
 
 	const pp = new Map();
 	for (const ppThumb of stored.profilePicThumbs) {
+		if (ppThumb.previewEurl == null && ppThumb.eurl == null) {
+			continue;
+		}
 		pp.set(ppThumb.id, {
 			preview: ppThumb.previewEurl,
 			full: ppThumb.eurl,
@@ -1070,12 +1095,19 @@ async function findRequiredWhatsappData() {
 		return p;
 	}, {});
 
+	const botsData = stored.botProfiles.reduce((p, c) => {
+		if (c.id in p) throw new Error("already exists");
+		p[c.id] = c;
+		return p;
+	}, {});
+
 	const chats = new Map();
 
 	for (const chat of stored.chats) {
 		if (chat.id === "0@c.us") continue;
 
 		const profilePic = pp.get(chat.id);
+
 		const [id, idType] = chat.id.split("@");
 		const type = idType === "c.us" ?
 			"private" :
@@ -1103,13 +1135,17 @@ async function findRequiredWhatsappData() {
 			unreadMentionCount: chat.unreadMentionCount,
 			isArchived: chat.archive,
 			isMuted: chat.muteExpiration !== 0,
+			isBot: false
 		};
 
 		if (type === "private") {
 			const contact = contactsData[chat.id];
-			if (contact == null) {
-				// fails because of chats like "Meta AI", hopefully nothing else will escape through this
-				continue;
+			if (chat.id in botsData) {
+				if (contact == null) {
+					// fails because of chats like "Meta AI", hopefully nothing else will escape through this
+					continue;
+				}
+				chatObject.isBot = true;
 			}
 
 			chatObject.contact = {
@@ -1167,6 +1203,7 @@ async function findAuthWALid() {
 async function getIndexedDbData(dbName) {
 	const db = await readIndexedDb(dbName);
 	const transaction = db.transaction(db.objectStoreNames, "readonly");
+	const botProfiles = await getStoreData(transaction, "bot-profile");
 	const chats = await getStoreData(transaction, "chat");
 	const profilePicThumbs = await getStoreData(transaction, "profile-pic-thumb");
 	// const messages = await getStoreData(transaction, "message");
@@ -1188,6 +1225,7 @@ async function getIndexedDbData(dbName) {
 		profilePicThumbs,
 		contacts,
 		participants,
+		botProfiles,
 		me: {
 			jid: meJid,
 			phoneNumber: mePhoneNumber,
@@ -1210,16 +1248,16 @@ function getStoreData(transaction, storeName) {
 // for (const {
 // 		name: dbName
 // 	} of await indexedDB.databases()) {
-// 	if (dbName === "model-storage") continue;
 // 	const db = await readIndexedDb(dbName);
 // 	if (db.objectStoreNames.length === 0) continue;
 // 	const transaction = db.transaction(db.objectStoreNames, "readonly");
 // 	for (const name of db.objectStoreNames) {
-// 		if (["message", "sync-actions", "reactions", "chat", "message-info", "participant", "poll-votes", "message-orphans", "message-association", "group-metadata", "orphan-revoke", "group-invite-v4"].includes(name)) continue;
+// // 		if (name === "profile-pic-thumb") continue;
+// 		console.log(name)
+// // 		if (["message", "sync-actions", "reactions", "chat", "message-info", "participant", "poll-votes", "message-orphans", "message-association", "group-metadata", "orphan-revoke", "group-invite-v4"].includes(name)) continue;
 // 		const data = await getStoreData(transaction, name);
 // 		for (const dd of data) {
-// 			if (JSON.stringify(dd).includes("")) {
-// 				console.log(name);
+// 			if (JSON.stringify(dd).includes("2367615245656328812")) {
 // 				console.log(dd);
 // 			}
 // 		}
