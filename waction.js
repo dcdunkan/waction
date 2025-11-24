@@ -10,6 +10,7 @@ async function run() {
 		window.runnableStateObserver.disconnect();
 	}
 	window.runnableStateObserver = new MutationObserver((list, observer) => {
+		const prevRunnableState = runnableState;
 		runnableState = document.querySelector(makeSelector("button", {
 			"aria-label": "Chats",
 			"aria-pressed": true,
@@ -19,7 +20,8 @@ async function run() {
 		})) != null && document.querySelector(makeSelector("div", {
 			"aria-label": "Chat list"
 		})) != null;
-		console.log("runnable:", runnableState);
+		if (prevRunnableState !== runnableState)
+			console.log("runnable:", runnableState);
 	});
 	window.runnableStateObserver.observe(document.getElementById("app"), {
 		childList: true,
@@ -42,7 +44,7 @@ async function run() {
 		play: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-play-icon lucide-play"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>`,
 		pause: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pause-icon lucide-pause"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></svg>`,
 		stop: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-icon lucide-square"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>`,
-		loaderCircle: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-loader-icon lucide-loader"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>`,
+		loaderCircle: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;" class="lucide lucide-loader-icon lucide-loader"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>`,
 	};
 	const CANVAS_BACKGROUND_COLOR = "#000";
 	const GAME_STATES = indexObj(["PLAYING", "LOADING_DATA", "PAUSED", "STOPPED"]);
@@ -128,8 +130,6 @@ async function run() {
 	window.gameCurrentState = GAME_STATES.STOPPED;
 	window.lastFrame = null;
 	window.restoreListeners = null;
-
-	let gameData = null;
 
 	// inputs management
 	function activateInputs(modes) {
@@ -873,6 +873,7 @@ async function run() {
 		const gameControlButton = settingsButton.cloneNode(true);
 		bottomSidebarSection.prepend(gameControlButton);
 		gameControlButton.id = "wac-control-button";
+		return gameControlButton;
 	}
 
 	function setupGameArea() {
@@ -905,16 +906,30 @@ async function run() {
 		bannerDiv.style.visibility = visible ? "hidden" : "visible";
 	}
 
-	setupControlButtons();
-	const controlButton = document.getElementById("wac-control-button");
-	controlButton.firstChild.onclick = play;
-	changeControlButtonIcon(SVG_ICONS.play);
+	const gameControlButton = setupControlButtons();
+	updateGameState(GAME_STATES.STOPPED);
 
-	function changeControlButtonIcon(svgIcon) {
-		controlButton.firstChild.querySelector("span").innerHTML = svgIcon;
+	function updateGameState(currentState) {
+		const prevState = window.gameCurrentState;
+		window.gameCurrentState = currentState;
+
+		const controlButton = gameControlButton.firstChild;
+		const controlButtonSVG = controlButton.querySelector("svg");
+		if (currentState === GAME_STATES.PLAYING) {
+			controlButton.onclick = stop;
+			controlButtonSVG.outerHTML = SVG_ICONS.stop;
+		} else if (currentState === GAME_STATES.STOPPED) {
+			controlButton.onclick = play;
+			controlButtonSVG.outerHTML = SVG_ICONS.play;
+		} else if (currentState === GAME_STATES.LOADING_DATA) {
+			controlButton.onclick = null;
+			controlButtonSVG.outerHTML = SVG_ICONS.loaderCircle;
+		} else {
+			throw new Error("unhandled stuff");
+		}
 	}
 
-	function initialize(chats, me) {
+	function initializeLoop(chats, me) {
 		let lastTimestamp = null;
 		let frames = 0;
 		let secondProgress = 0;
@@ -995,39 +1010,24 @@ async function run() {
 	function play() {
 		// document.dispatchEvent(new KeyboardEvent('keydown', { key: "Escape" }));
 		setupGameArea();
-		window.gameCurrentState = GAME_STATES.LOADING_DATA;
-		console.info("LOADING_DATA");
+		updateGameState(GAME_STATES.LOADING_DATA);
 		setCanvasVisible(true);
-		changeControlButtonIcon(SVG_ICONS.loaderCircle);
-		const loaderIcon = controlButton.querySelector("svg.lucide");
-		loaderIcon.style.animation = "spin 1s linear infinite";
-		controlButton.firstChild.onclick = null;
+		
+		console.info("reading whatsapp indexeddb");
 
 		findRequiredWhatsappData()
-			.then(({
-				chats,
-				me,
-			}) => {
-				window.gameCurrentState = GAME_STATES.PLAYING;
-				console.info("PLAYING");
-				controlButton.firstChild.onclick = stop;
-				changeControlButtonIcon(SVG_ICONS.stop);
-
-				initialize(chats, me);
+			.then((data) => {
+				console.info("initializing the game");
+				updateGameState(GAME_STATES.PLAYING);
+				initializeLoop(data.chats, data.me);
 			})
 			.catch((error) => {
 				if (typeof window.restoreListeners === "function") {
 					window.restoreListeners();
 				}
-				window.gameCurrentState = GAME_STATES.PLAY;
-				controlButton.firstChild.onclick = play;
-				changeControlButtonIcon(SVG_ICONS.play);
-
+				updateGameState(GAME_STATES.STOPPED);
 				console.error(error);
 				alert("Failed to load data. Please check console.");
-			})
-			.finally(() => {
-				loaderIcon.style.animation = "";
 			});
 	}
 
@@ -1036,10 +1036,8 @@ async function run() {
 			window.restoreListeners();
 		}
 		setCanvasVisible(false);
-		window.gameCurrentState = GAME_STATES.STOPPED;
-		console.info("STOPPING");
-		controlButton.firstChild.onclick = play;
-		changeControlButtonIcon(SVG_ICONS.play);
+		console.info("stopping the game")
+		updateGameState(GAME_STATES.STOPPED);
 
 		const canvas = document.getElementById("game-canvas");
 		const ctx = canvas.getContext("2d");
@@ -1145,6 +1143,7 @@ async function findRequiredWhatsappData() {
 					// fails because of chats like "Meta AI", hopefully nothing else will escape through this
 					continue;
 				}
+				// throw new Error("expected it to work?");
 				chatObject.isBot = true;
 			}
 
